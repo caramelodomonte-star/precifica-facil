@@ -1,0 +1,39 @@
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v3
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+
+      - name: Criar projeto Flutter base
+        run: flutter create --org com.precifica --project-name precifica_facil base_project
+
+      - name: Substituir código pelo seu
+        run: |
+          cp -r lib/* base_project/lib/
+          cp pubspec.yaml base_project/pubspec.yaml
+
+      - name: Instalar dependências
+        working-directory: base_project
+        run: flutter pub get
+
+      - name: Gerar APK
+        working-directory: base_project
+        run: flutter build apk --debug
+
+      - name: Disponibilizar APK para download
+        uses: actions/upload-artifact@v3
+        with:
+          name: precifica-facil-apk
+          path: base_project/build/app/outputs/flutter-apk/app-debug.apk

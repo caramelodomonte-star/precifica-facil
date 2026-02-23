@@ -1,0 +1,44 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v3
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+
+      - name: Habilitar suporte Windows
+        run: flutter config --enable-windows-desktop
+
+      - name: Criar projeto Flutter base
+        run: flutter create --org com.precifica --project-name precifica_facil base_project
+
+      - name: Copiar codigo
+        run: |
+          Copy-Item -Path lib\* -Destination base_project\lib\ -Recurse -Force
+          Copy-Item -Path pubspec.yaml -Destination base_project\pubspec.yaml -Force
+
+      - name: Instalar dependencias
+        working-directory: base_project
+        run: flutter pub get
+
+      - name: Gerar EXE Windows
+        working-directory: base_project
+        run: flutter build windows --release
+
+      - name: Disponibilizar EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: precifica-facil-windows
+          path: base_project\build\windows\x64\runner\Release\

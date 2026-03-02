@@ -114,14 +114,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() { _animController.dispose(); super.dispose(); }
 
-  Map<String, dynamic> _calcularFaixa(double pv) {
-    if (pv <= 79.99) return {'percent': 0.20, 'taxa': 4.0, 'faixa': 'Até R\$79,99 • 20% + R\$4'};
-    if (pv <= 99.99) return {'percent': 0.14, 'taxa': 16.0, 'faixa': 'R\$80 a R\$99,99 • 14% + R\$16'};
-    if (pv <= 199.99) return {'percent': 0.14, 'taxa': 20.0, 'faixa': 'R\$100 a R\$199,99 • 14% + R\$20'};
-    if (pv <= 499.99) return {'percent': 0.14, 'taxa': 26.0, 'faixa': 'R\$200 a R\$499,99 • 14% + R\$26'};
-    return {'percent': 0.14, 'taxa': 26.0, 'faixa': 'Acima de R\$500 • 14% + R\$26'};
-  }
-
   void calcular() {
     double cp = double.tryParse(produtoController.text.replaceAll(',', '.')) ?? 0;
 
@@ -186,6 +178,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
     _animController.reset();
     _animController.forward();
+  }
+
+  void _usarResultadoNoPrecificador() {
+    double valor = double.tryParse(_currentNumber.replaceAll(',', '.')) ?? 0;
+    if (valor <= 0) return;
+    setState(() {
+      produtoController.text = valor.toStringAsFixed(2);
+      mostrarCalc = false;
+    });
+    calcular();
   }
 
   void _calcBotao(String valor) {
@@ -350,6 +352,27 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           decoration: BoxDecoration(color: Color(0xFF0F0F1A), borderRadius: BorderRadius.circular(18)),
           child: Text(_displayFull, textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
+        SizedBox(height: 12),
+
+        // ✅ BOTÃO DESTAQUE — Usar como Custo do Produto
+        GestureDetector(
+          onTap: _usarResultadoNoPrecificador,
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Color(0xFF1565C0), Color(0xFF42A5F5)], begin: Alignment.centerLeft, end: Alignment.centerRight),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Color(0xFF1565C0).withOpacity(0.5), blurRadius: 12, offset: Offset(0, 4))],
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text("USAR COMO CUSTO DO PRODUTO", style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800, letterSpacing: 1)),
+            ]),
+          ),
+        ),
+
         SizedBox(height: 10),
         Row(children: [_btn('AC', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('⌫', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('%', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('÷', Color(0xFFFF6A00), Colors.white)]),
         Row(children: [_btn('7', Color(0xFF252538), Colors.white), _btn('8', Color(0xFF252538), Colors.white), _btn('9', Color(0xFF252538), Colors.white), _btn('×', Color(0xFFFF6A00), Colors.white)]),

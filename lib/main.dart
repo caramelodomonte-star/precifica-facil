@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -397,7 +398,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             child: Column(children: [
               Row(children: [
-                // ✅ LOGO com símbolo $ em destaque
                 Container(
                   padding: EdgeInsets.all(10),
                   decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)),
@@ -408,7 +408,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   Text("Precifica Fácil", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                   Text("Calcule seu preço ideal", style: TextStyle(color: Colors.white70, fontSize: 12)),
                 ])),
-                // ✅ BOTÃO CALCULADORA maior e mais destacado
                 GestureDetector(
                   onTap: () => setState(() => mostrarCalc = !mostrarCalc),
                   child: AnimatedContainer(
@@ -478,7 +477,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 child: Row(children: [
                   Icon(Icons.info_outline_rounded, color: Colors.white24, size: 14),
                   SizedBox(width: 8),
-                  Text("Comissão e taxa fixa calculadas automaticamente pela tabela Shopee", style: TextStyle(color: Colors.white24, fontSize: 11)),
+                  Expanded(child: Text("Comissão e taxa fixa calculadas automaticamente pela tabela Shopee", style: TextStyle(color: Colors.white24, fontSize: 11))),
                 ]),
               ),
             ] else ...[
@@ -520,7 +519,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               SizedBox(height: 20),
               Text("DETALHES", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
               SizedBox(height: 12),
-              // ✅ CUSTO DO PRODUTO adicionado nos detalhes
               _cardPequeno(titulo: "CUSTO DO PRODUTO", valor: custoProduto, icone: Icons.inventory_2_rounded, cor: Color(0xFFFF6A00)),
               _cardPequeno(titulo: "COMISSÃO DE VENDA", valor: comissaoValor, icone: Icons.percent_rounded, cor: Color(0xFFEF5350), extra: "${comissaoPercentual.toStringAsFixed(0)}%"),
               _cardPequeno(titulo: "TAXA FIXA", valor: taxaFixaAplicada, icone: Icons.receipt_rounded, cor: Color(0xFFFFBF80)),

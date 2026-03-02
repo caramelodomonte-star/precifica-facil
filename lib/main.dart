@@ -90,6 +90,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   double taxaFixaAplicada = 0;
   double liquido = 0;
   double custoTotal = 0;
+  double custoProduto = 0;
   String faixaAplicada = '';
   bool calculou = false;
   bool mostrarCalc = false;
@@ -158,7 +159,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() {
         preco = precoVenda; lucroReais = lucroCalc; comissaoValor = comissaoCalc;
         comissaoPercentual = comissaoPercent * 100; taxaFixaAplicada = taxaFixa;
-        liquido = liquidoCalc; custoTotal = custoCalc; faixaAplicada = faixaStr; calculou = true;
+        liquido = liquidoCalc; custoTotal = custoCalc; custoProduto = cp;
+        faixaAplicada = faixaStr; calculou = true;
       });
     } else {
       double ce = double.tryParse(embalagemController.text.replaceAll(',', '.')) ?? 0;
@@ -173,7 +175,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() {
         preco = precoVenda; lucroReais = lucroCalc; comissaoValor = comissaoCalc;
         comissaoPercentual = tc * 100; taxaFixaAplicada = tf;
-        liquido = liquidoCalc; custoTotal = custoCalc; faixaAplicada = ''; calculou = true;
+        liquido = liquidoCalc; custoTotal = custoCalc; custoProduto = cp;
+        faixaAplicada = ''; calculou = true;
       });
     }
     _animController.reset();
@@ -353,13 +356,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           child: Text(_displayFull, textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
         SizedBox(height: 12),
-
-        // ✅ BOTÃO DESTAQUE — Usar como Custo do Produto
         GestureDetector(
           onTap: _usarResultadoNoPrecificador,
           child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.symmetric(vertical: 14),
+            width: double.infinity, padding: EdgeInsets.symmetric(vertical: 14),
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: [Color(0xFF1565C0), Color(0xFF42A5F5)], begin: Alignment.centerLeft, end: Alignment.centerRight),
               borderRadius: BorderRadius.circular(14),
@@ -372,7 +372,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ]),
           ),
         ),
-
         SizedBox(height: 10),
         Row(children: [_btn('AC', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('⌫', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('%', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('÷', Color(0xFFFF6A00), Colors.white)]),
         Row(children: [_btn('7', Color(0xFF252538), Colors.white), _btn('8', Color(0xFF252538), Colors.white), _btn('9', Color(0xFF252538), Colors.white), _btn('×', Color(0xFFFF6A00), Colors.white)]),
@@ -398,18 +397,34 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             child: Column(children: [
               Row(children: [
-                Container(padding: EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)), child: Icon(Icons.calculate_rounded, color: Colors.white, size: 26)),
+                // ✅ LOGO com símbolo $ em destaque
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)),
+                  child: Text("\$", style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                ),
                 SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text("Precifica Fácil", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                   Text("Calcule seu preço ideal", style: TextStyle(color: Colors.white70, fontSize: 12)),
                 ])),
+                // ✅ BOTÃO CALCULADORA maior e mais destacado
                 GestureDetector(
                   onTap: () => setState(() => mostrarCalc = !mostrarCalc),
-                  child: Container(
-                    padding: EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: mostrarCalc ? Colors.white : Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)),
-                    child: Icon(mostrarCalc ? Icons.close_rounded : Icons.calculate_outlined, color: mostrarCalc ? Color(0xFFFF6A00) : Colors.white, size: 22),
+                  child: AnimatedContainer(
+                    duration: Duration(milliseconds: 200),
+                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: mostrarCalc ? Colors.white : Colors.white.withOpacity(0.25),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+                      boxShadow: mostrarCalc ? [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4))] : [],
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(mostrarCalc ? Icons.close_rounded : Icons.calculate_outlined, color: mostrarCalc ? Color(0xFFFF6A00) : Colors.white, size: 22),
+                      SizedBox(width: 6),
+                      Text(mostrarCalc ? "Fechar" : "Calc", style: TextStyle(color: mostrarCalc ? Color(0xFFFF6A00) : Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ]),
                   ),
                 ),
               ]),
@@ -505,6 +520,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               SizedBox(height: 20),
               Text("DETALHES", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
               SizedBox(height: 12),
+              // ✅ CUSTO DO PRODUTO adicionado nos detalhes
+              _cardPequeno(titulo: "CUSTO DO PRODUTO", valor: custoProduto, icone: Icons.inventory_2_rounded, cor: Color(0xFFFF6A00)),
               _cardPequeno(titulo: "COMISSÃO DE VENDA", valor: comissaoValor, icone: Icons.percent_rounded, cor: Color(0xFFEF5350), extra: "${comissaoPercentual.toStringAsFixed(0)}%"),
               _cardPequeno(titulo: "TAXA FIXA", valor: taxaFixaAplicada, icone: Icons.receipt_rounded, cor: Color(0xFFFFBF80)),
               _cardPequeno(titulo: "CUSTO DA EMBALAGEM", valor: modoAutomatico ? 1.0 : (double.tryParse(embalagemController.text) ?? 0), icone: Icons.redeem_rounded, cor: Color(0xFFFF9A3C)),

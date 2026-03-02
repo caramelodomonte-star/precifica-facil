@@ -15,11 +15,54 @@ class PrecificaApp extends StatelessWidget {
     return MaterialApp(
       title: 'Precifica Fácil',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: 'Roboto',
-        scaffoldBackgroundColor: Color(0xFF0F0F1A),
-      ),
+      theme: ThemeData(fontFamily: 'Roboto', scaffoldBackgroundColor: Color(0xFF0F0F1A)),
       home: HomePage(),
+    );
+  }
+}
+
+class _CalcButton extends StatefulWidget {
+  final String label;
+  final Color bg;
+  final Color fg;
+  final VoidCallback onTap;
+  const _CalcButton({required this.label, required this.bg, required this.fg, required this.onTap});
+  @override
+  _CalcButtonState createState() => _CalcButtonState();
+}
+
+class _CalcButtonState extends State<_CalcButton> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _scale;
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: Duration(milliseconds: 80));
+    _scale = Tween<double>(begin: 1.0, end: 0.85).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTapDown: (_) => _ctrl.forward(),
+        onTapUp: (_) { _ctrl.reverse(); widget.onTap(); },
+        onTapCancel: () => _ctrl.reverse(),
+        child: ScaleTransition(
+          scale: _scale,
+          child: Container(
+            margin: EdgeInsets.all(5),
+            height: 64,
+            decoration: BoxDecoration(
+              color: widget.bg,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: widget.bg.withOpacity(0.5), blurRadius: 8, offset: Offset(0, 4))],
+            ),
+            child: Center(child: Text(widget.label, style: TextStyle(color: widget.fg, fontSize: 22, fontWeight: FontWeight.w600))),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -31,36 +74,28 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final produtoController = TextEditingController();
+  final lucroController = TextEditingController();
   final embalagemController = TextEditingController();
   final taxaFixaController = TextEditingController();
   final comissaoController = TextEditingController();
-  final lucroController = TextEditingController();
-
-  double autoEmbalagem = 1.0;
-  double autoTaxaFixa = 4.0;
-  double autoComissao = 20.0;
-  double autoLucro = 30.0;
+  final lucroManualController = TextEditingController();
 
   bool modoAutomatico = true;
-  bool editandoEmbalagem = false;
-  bool editandoTaxa = false;
-  bool editandoComissao = false;
-  bool editandoLucro = false;
-
-  final autoEmbalagemCtrl = TextEditingController();
-  final autoTaxaCtrl = TextEditingController();
-  final autoComissaoCtrl = TextEditingController();
-  final autoLucroCtrl = TextEditingController();
+  bool lucroEmReais = false;
 
   double preco = 0;
   double lucroReais = 0;
   double comissaoValor = 0;
+  double comissaoPercentual = 0;
+  double taxaFixaAplicada = 0;
   double liquido = 0;
   double custoTotal = 0;
+  String faixaAplicada = '';
   bool calculou = false;
   bool mostrarCalc = false;
 
-  String _display = '0';
+  String _displayFull = '0';
+  String _currentNumber = '0';
   String _operando1 = '';
   String _operador = '';
   bool _novoNumero = false;
@@ -73,36 +108,82 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     super.initState();
     _animController = AnimationController(vsync: this, duration: Duration(milliseconds: 600));
     _fadeAnim = CurvedAnimation(parent: _animController, curve: Curves.easeOut);
+    lucroController.text = '30';
   }
 
   @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
+  void dispose() { _animController.dispose(); super.dispose(); }
+
+  Map<String, dynamic> _calcularFaixa(double pv) {
+    if (pv <= 79.99) return {'percent': 0.20, 'taxa': 4.0, 'faixa': 'Até R\$79,99 • 20% + R\$4'};
+    if (pv <= 99.99) return {'percent': 0.14, 'taxa': 16.0, 'faixa': 'R\$80 a R\$99,99 • 14% + R\$16'};
+    if (pv <= 199.99) return {'percent': 0.14, 'taxa': 20.0, 'faixa': 'R\$100 a R\$199,99 • 14% + R\$20'};
+    if (pv <= 499.99) return {'percent': 0.14, 'taxa': 26.0, 'faixa': 'R\$200 a R\$499,99 • 14% + R\$26'};
+    return {'percent': 0.14, 'taxa': 26.0, 'faixa': 'Acima de R\$500 • 14% + R\$26'};
   }
 
   void calcular() {
     double cp = double.tryParse(produtoController.text.replaceAll(',', '.')) ?? 0;
-    double ce = modoAutomatico ? autoEmbalagem : (double.tryParse(embalagemController.text.replaceAll(',', '.')) ?? 0);
-    double tf = modoAutomatico ? autoTaxaFixa : (double.tryParse(taxaFixaController.text.replaceAll(',', '.')) ?? 0);
-    double tc = (modoAutomatico ? autoComissao : (double.tryParse(comissaoController.text.replaceAll(',', '.')) ?? 0)) / 100;
-    double lc = (modoAutomatico ? autoLucro : (double.tryParse(lucroController.text.replaceAll(',', '.')) ?? 0)) / 100;
 
-    double lucroCalc = cp * lc;
-    double base = cp + ce + tf + lucroCalc;
-    double precoVenda = tc < 1 ? base / (1 - tc) : 0;
-    double comissaoCalc = precoVenda * tc;
-    double liquidoCalc = precoVenda - comissaoCalc;
-    double custoCalc = cp + ce + tf;
+    if (modoAutomatico) {
+      double embalagem = 1.0;
+      double lucroVal = double.tryParse(lucroController.text.replaceAll(',', '.')) ?? 30;
+      double lucroPercent = lucroEmReais ? (cp > 0 ? lucroVal / cp : 0) : (lucroVal / 100);
+      double lucroCalc = cp * lucroPercent;
 
-    setState(() {
-      preco = precoVenda;
-      lucroReais = lucroCalc;
-      comissaoValor = comissaoCalc;
-      liquido = liquidoCalc;
-      custoTotal = custoCalc;
-      calculou = true;
-    });
+      List<Map<String, dynamic>> faixas = [
+        {'min': 0.0, 'max': 79.99, 'percent': 0.20, 'taxa': 4.0, 'faixa': 'Até R\$79,99 • 20% + R\$4'},
+        {'min': 80.0, 'max': 99.99, 'percent': 0.14, 'taxa': 16.0, 'faixa': 'R\$80 a R\$99,99 • 14% + R\$16'},
+        {'min': 100.0, 'max': 199.99, 'percent': 0.14, 'taxa': 20.0, 'faixa': 'R\$100 a R\$199,99 • 14% + R\$20'},
+        {'min': 200.0, 'max': 499.99, 'percent': 0.14, 'taxa': 26.0, 'faixa': 'R\$200 a R\$499,99 • 14% + R\$26'},
+        {'min': 500.0, 'max': double.infinity, 'percent': 0.14, 'taxa': 26.0, 'faixa': 'Acima de R\$500 • 14% + R\$26'},
+      ];
+
+      double precoVenda = 0, taxaFixa = 0, comissaoPercent = 0;
+      String faixaStr = '';
+
+      for (var f in faixas) {
+        double tc = f['percent'];
+        double tf = f['taxa'];
+        double base = cp + embalagem + lucroCalc + tf;
+        double pv = base / (1 - tc);
+        if (pv >= f['min'] && pv <= f['max']) {
+          precoVenda = pv; taxaFixa = tf; comissaoPercent = tc; faixaStr = f['faixa'];
+          break;
+        }
+      }
+
+      if (precoVenda == 0) {
+        taxaFixa = 26.0; comissaoPercent = 0.14;
+        precoVenda = (cp + embalagem + lucroCalc + taxaFixa) / (1 - comissaoPercent);
+        faixaStr = 'Acima de R\$500 • 14% + R\$26';
+      }
+
+      double comissaoCalc = precoVenda * comissaoPercent;
+      double liquidoCalc = precoVenda - comissaoCalc - taxaFixa;
+      double custoCalc = cp + embalagem + comissaoCalc + taxaFixa;
+
+      setState(() {
+        preco = precoVenda; lucroReais = lucroCalc; comissaoValor = comissaoCalc;
+        comissaoPercentual = comissaoPercent * 100; taxaFixaAplicada = taxaFixa;
+        liquido = liquidoCalc; custoTotal = custoCalc; faixaAplicada = faixaStr; calculou = true;
+      });
+    } else {
+      double ce = double.tryParse(embalagemController.text.replaceAll(',', '.')) ?? 0;
+      double tf = double.tryParse(taxaFixaController.text.replaceAll(',', '.')) ?? 0;
+      double tc = (double.tryParse(comissaoController.text.replaceAll(',', '.')) ?? 0) / 100;
+      double lc = (double.tryParse(lucroManualController.text.replaceAll(',', '.')) ?? 0) / 100;
+      double lucroCalc = cp * lc;
+      double precoVenda = tc < 1 ? (cp + ce + tf + lucroCalc) / (1 - tc) : 0;
+      double comissaoCalc = precoVenda * tc;
+      double liquidoCalc = precoVenda - comissaoCalc - tf;
+      double custoCalc = cp + ce + tf + comissaoCalc;
+      setState(() {
+        preco = precoVenda; lucroReais = lucroCalc; comissaoValor = comissaoCalc;
+        comissaoPercentual = tc * 100; taxaFixaAplicada = tf;
+        liquido = liquidoCalc; custoTotal = custoCalc; faixaAplicada = ''; calculou = true;
+      });
+    }
     _animController.reset();
     _animController.forward();
   }
@@ -110,31 +191,40 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _calcBotao(String valor) {
     setState(() {
       if (valor == 'AC') {
-        _display = '0'; _operando1 = ''; _operador = ''; _novoNumero = false;
+        _displayFull = '0'; _currentNumber = '0'; _operando1 = ''; _operador = ''; _novoNumero = false;
       } else if (valor == '⌫') {
-        _display = _display.length > 1 ? _display.substring(0, _display.length - 1) : '0';
+        if (_currentNumber.length > 1) { _currentNumber = _currentNumber.substring(0, _currentNumber.length - 1); }
+        else { _currentNumber = '0'; }
+        _displayFull = _operador.isNotEmpty ? _operando1 + _operador + (_currentNumber == '0' ? '' : _currentNumber) : _currentNumber;
       } else if (['+', '-', '×', '÷'].contains(valor)) {
-        _operando1 = _display; _operador = valor; _novoNumero = true;
+        _operando1 = _currentNumber; _operador = valor; _novoNumero = true;
+        _displayFull = _currentNumber + valor;
       } else if (valor == '=') {
         if (_operando1.isNotEmpty && _operador.isNotEmpty) {
           double a = double.tryParse(_operando1) ?? 0;
-          double b = double.tryParse(_display) ?? 0;
+          double b = double.tryParse(_currentNumber) ?? 0;
           double resultado = 0;
           if (_operador == '+') resultado = a + b;
           if (_operador == '-') resultado = a - b;
           if (_operador == '×') resultado = a * b;
           if (_operador == '÷') resultado = b != 0 ? a / b : 0;
-          _display = resultado % 1 == 0 ? resultado.toInt().toString() : resultado.toStringAsFixed(2);
-          _operando1 = ''; _operador = ''; _novoNumero = false;
+          String res = resultado % 1 == 0 ? resultado.toInt().toString() : resultado.toStringAsFixed(2);
+          _currentNumber = res; _displayFull = res; _operando1 = ''; _operador = ''; _novoNumero = false;
         }
       } else if (valor == '%') {
-        double v = double.tryParse(_display) ?? 0;
-        _display = (v / 100).toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+        double v = double.tryParse(_currentNumber) ?? 0;
+        String res = (v / 100).toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+        _currentNumber = res;
+        _displayFull = _operador.isNotEmpty ? _operando1 + _operador + res + '%' : res + '%';
       } else if (valor == ',') {
-        if (!_display.contains('.')) _display += '.';
+        if (!_currentNumber.contains('.')) {
+          _currentNumber += '.';
+          _displayFull = _operador.isNotEmpty ? _operando1 + _operador + _currentNumber : _currentNumber;
+        }
       } else {
-        if (_novoNumero || _display == '0') { _display = valor; _novoNumero = false; }
-        else { _display += valor; }
+        if (_novoNumero || _currentNumber == '0') { _currentNumber = valor; _novoNumero = false; }
+        else { _currentNumber += valor; }
+        _displayFull = _operador.isNotEmpty ? _operando1 + _operador + _currentNumber : _currentNumber;
       }
     });
   }
@@ -161,102 +251,112 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _campoAuto({required String label, required String valor, required bool editando, required TextEditingController ctrl, required Color cor, required IconData icone, required VoidCallback onEditar, required VoidCallback onSalvar}) {
+  Widget _campoLucro() {
     return Container(
       margin: EdgeInsets.only(bottom: 14),
-      decoration: BoxDecoration(color: Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(16), border: Border.all(color: cor.withOpacity(0.3), width: 1.5)),
-      child: editando
-          ? TextField(
-              controller: ctrl,
-              autofocus: true,
-              keyboardType: TextInputType.numberWithOptions(decimal: true),
-              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-              decoration: InputDecoration(
-                labelText: label,
-                labelStyle: TextStyle(color: cor, fontSize: 13, fontWeight: FontWeight.w600),
-                prefixIcon: Container(margin: EdgeInsets.all(12), padding: EdgeInsets.all(8), decoration: BoxDecoration(color: cor.withOpacity(0.15), borderRadius: BorderRadius.circular(10)), child: Icon(icone, color: cor, size: 20)),
-                suffixIcon: IconButton(icon: Icon(Icons.check_circle_rounded, color: Color(0xFF4CAF50), size: 28), onPressed: onSalvar),
-                border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-              ),
-            )
-          : ListTile(
-              leading: Container(padding: EdgeInsets.all(8), decoration: BoxDecoration(color: cor.withOpacity(0.15), borderRadius: BorderRadius.circular(10)), child: Icon(icone, color: cor, size: 20)),
-              title: Text(label, style: TextStyle(color: cor, fontSize: 13, fontWeight: FontWeight.w600)),
-              subtitle: Text(valor, style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500)),
-              trailing: IconButton(icon: Icon(Icons.edit_rounded, color: Colors.white38, size: 20), onPressed: onEditar),
+      decoration: BoxDecoration(color: Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Color(0xFF81C784).withOpacity(0.3), width: 1.5)),
+      child: Row(children: [
+        Container(margin: EdgeInsets.all(12), padding: EdgeInsets.all(8), decoration: BoxDecoration(color: Color(0xFF81C784).withOpacity(0.15), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.trending_up_rounded, color: Color(0xFF81C784), size: 20)),
+        Expanded(
+          child: TextField(
+            controller: lucroController,
+            keyboardType: TextInputType.numberWithOptions(decimal: true),
+            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              labelText: lucroEmReais ? "Lucro Desejado (R\$)" : "Lucro Desejado (%)",
+              labelStyle: TextStyle(color: Color(0xFF81C784), fontSize: 13, fontWeight: FontWeight.w600),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 0, vertical: 18),
             ),
+          ),
+        ),
+        GestureDetector(
+          onTap: () => setState(() { lucroEmReais = !lucroEmReais; lucroController.text = lucroEmReais ? '' : '30'; }),
+          child: Container(
+            margin: EdgeInsets.only(right: 12),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(color: Color(0xFF81C784).withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+            child: Text(lucroEmReais ? 'R\$' : '%', style: TextStyle(color: Color(0xFF81C784), fontWeight: FontWeight.w800, fontSize: 14)),
+          ),
+        ),
+      ]),
     );
   }
 
-  Widget _cardResultado({required String titulo, required String subtitulo, required double valor, required IconData icone, required List<Color> gradiente, bool destaque = false}) {
+  Widget _cardDestaque({required String titulo, required String subtitulo, required double valor, required IconData icone, required List<Color> gradiente}) {
     return FadeTransition(
       opacity: _fadeAnim,
       child: Container(
         margin: EdgeInsets.only(bottom: 12),
-        padding: EdgeInsets.all(20),
+        padding: EdgeInsets.all(22),
         decoration: BoxDecoration(
           gradient: LinearGradient(colors: gradiente, begin: Alignment.topLeft, end: Alignment.bottomRight),
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: gradiente[0].withOpacity(0.35), blurRadius: 16, offset: Offset(0, 6))],
+          boxShadow: [BoxShadow(color: gradiente[0].withOpacity(0.4), blurRadius: 18, offset: Offset(0, 7))],
         ),
-        child: Row(
-          children: [
-            Container(padding: EdgeInsets.all(14), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)), child: Icon(icone, color: Colors.white, size: destaque ? 28 : 22)),
-            SizedBox(width: 16),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(titulo, style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1)),
-              SizedBox(height: 4),
-              Text(moeda(valor), style: TextStyle(color: Colors.white, fontSize: destaque ? 26 : 20, fontWeight: FontWeight.bold)),
-              if (subtitulo.isNotEmpty) Text(subtitulo, style: TextStyle(color: Colors.white60, fontSize: 11)),
-            ])),
-          ],
-        ),
+        child: Row(children: [
+          Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)), child: Icon(icone, color: Colors.white, size: 30)),
+          SizedBox(width: 16),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titulo, style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 1)),
+            SizedBox(height: 4),
+            Text(moeda(valor), style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold)),
+            if (subtitulo.isNotEmpty) Text(subtitulo, style: TextStyle(color: Colors.white60, fontSize: 11)),
+          ])),
+        ]),
       ),
     );
   }
 
-  Widget _botaoCalc(String label, Color bg, Color fg) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _calcBotao(label),
-        child: Container(
-          margin: EdgeInsets.all(5),
-          height: 64,
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)),
-          child: Center(child: Text(label, style: TextStyle(color: fg, fontSize: 22, fontWeight: FontWeight.w600))),
-        ),
+  Widget _cardPequeno({required String titulo, required double valor, required IconData icone, required Color cor, String? extra}) {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: Container(
+        margin: EdgeInsets.only(bottom: 10),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(color: Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(16), border: Border.all(color: cor.withOpacity(0.25), width: 1.2)),
+        child: Row(children: [
+          Container(padding: EdgeInsets.all(8), decoration: BoxDecoration(color: cor.withOpacity(0.15), borderRadius: BorderRadius.circular(10)), child: Icon(icone, color: cor, size: 18)),
+          SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(titulo, style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+            SizedBox(height: 2),
+            Row(children: [
+              Text(moeda(valor), style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+              if (extra != null) ...[SizedBox(width: 8), Container(padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: cor.withOpacity(0.15), borderRadius: BorderRadius.circular(6)), child: Text(extra, style: TextStyle(color: cor, fontSize: 11, fontWeight: FontWeight.w700)))],
+            ]),
+          ])),
+        ]),
       ),
     );
   }
+
+  Widget _btn(String label, Color bg, Color fg) => _CalcButton(label: label, bg: bg, fg: fg, onTap: () => _calcBotao(label));
 
   Widget _calculadora() {
     return Container(
       decoration: BoxDecoration(color: Color(0xFF1A1A2E), borderRadius: BorderRadius.vertical(top: Radius.circular(28)), boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 20)]),
       padding: EdgeInsets.fromLTRB(12, 16, 12, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
-          SizedBox(height: 16),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text("Calculadora", style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600)),
-            GestureDetector(onTap: () => setState(() => mostrarCalc = false), child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white54, size: 28)),
-          ]),
-          SizedBox(height: 12),
-          Container(
-            width: double.infinity, padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-            decoration: BoxDecoration(color: Color(0xFF0F0F1A), borderRadius: BorderRadius.circular(18)),
-            child: Text(_display, textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontSize: 40, fontWeight: FontWeight.bold)),
-          ),
-          SizedBox(height: 10),
-          Row(children: [_botaoCalc('AC', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _botaoCalc('⌫', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _botaoCalc('%', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _botaoCalc('÷', Color(0xFFFF6A00), Colors.white)]),
-          Row(children: [_botaoCalc('7', Color(0xFF252538), Colors.white), _botaoCalc('8', Color(0xFF252538), Colors.white), _botaoCalc('9', Color(0xFF252538), Colors.white), _botaoCalc('×', Color(0xFFFF6A00), Colors.white)]),
-          Row(children: [_botaoCalc('4', Color(0xFF252538), Colors.white), _botaoCalc('5', Color(0xFF252538), Colors.white), _botaoCalc('6', Color(0xFF252538), Colors.white), _botaoCalc('-', Color(0xFFFF6A00), Colors.white)]),
-          Row(children: [_botaoCalc('1', Color(0xFF252538), Colors.white), _botaoCalc('2', Color(0xFF252538), Colors.white), _botaoCalc('3', Color(0xFF252538), Colors.white), _botaoCalc('+', Color(0xFFFF6A00), Colors.white)]),
-          Row(children: [_botaoCalc('0', Color(0xFF252538), Colors.white), _botaoCalc(',', Color(0xFF252538), Colors.white), Expanded(child: GestureDetector(onTap: () => _calcBotao('='), child: Container(margin: EdgeInsets.all(5), height: 64, decoration: BoxDecoration(color: Color(0xFFFF6A00), borderRadius: BorderRadius.circular(16)), child: Center(child: Text('=', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w600))))))]),
-        ],
-      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2))),
+        SizedBox(height: 16),
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text("Calculadora", style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600)),
+          GestureDetector(onTap: () => setState(() => mostrarCalc = false), child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white54, size: 28)),
+        ]),
+        SizedBox(height: 12),
+        Container(
+          width: double.infinity, padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          decoration: BoxDecoration(color: Color(0xFF0F0F1A), borderRadius: BorderRadius.circular(18)),
+          child: Text(_displayFull, textAlign: TextAlign.right, style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
+        SizedBox(height: 10),
+        Row(children: [_btn('AC', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('⌫', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('%', Color(0xFF2A2A3E), Color(0xFFFF6A00)), _btn('÷', Color(0xFFFF6A00), Colors.white)]),
+        Row(children: [_btn('7', Color(0xFF252538), Colors.white), _btn('8', Color(0xFF252538), Colors.white), _btn('9', Color(0xFF252538), Colors.white), _btn('×', Color(0xFFFF6A00), Colors.white)]),
+        Row(children: [_btn('4', Color(0xFF252538), Colors.white), _btn('5', Color(0xFF252538), Colors.white), _btn('6', Color(0xFF252538), Colors.white), _btn('-', Color(0xFFFF6A00), Colors.white)]),
+        Row(children: [_btn('1', Color(0xFF252538), Colors.white), _btn('2', Color(0xFF252538), Colors.white), _btn('3', Color(0xFF252538), Colors.white), _btn('+', Color(0xFFFF6A00), Colors.white)]),
+        Row(children: [_btn('0', Color(0xFF252538), Colors.white), _btn(',', Color(0xFF252538), Colors.white), _btn('=', Color(0xFFFF6A00), Colors.white)]),
+      ]),
     );
   }
 
@@ -264,157 +364,135 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFF0F0F1A),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => setState(() => mostrarCalc = !mostrarCalc),
-        backgroundColor: Color(0xFFFF6A00),
-        child: Icon(mostrarCalc ? Icons.close : Icons.calculate_rounded, color: Colors.white),
-      ),
-      body: Stack(
-        children: [
-          Column(
-            children: [
+      body: Stack(children: [
+        Column(children: [
+          Container(
+            padding: EdgeInsets.fromLTRB(20, 52, 20, 24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Color(0xFFFF6A00), Color(0xFFFF9A3C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.only(bottomLeft: Radius.circular(32), bottomRight: Radius.circular(32)),
+              boxShadow: [BoxShadow(color: Color(0xFFFF6A00).withOpacity(0.4), blurRadius: 20, offset: Offset(0, 8))],
+            ),
+            child: Column(children: [
+              Row(children: [
+                Container(padding: EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)), child: Icon(Icons.calculate_rounded, color: Colors.white, size: 26)),
+                SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text("Precifica Fácil", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text("Calcule seu preço ideal", style: TextStyle(color: Colors.white70, fontSize: 12)),
+                ])),
+                GestureDetector(
+                  onTap: () => setState(() => mostrarCalc = !mostrarCalc),
+                  child: Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: mostrarCalc ? Colors.white : Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)),
+                    child: Icon(mostrarCalc ? Icons.close_rounded : Icons.calculate_outlined, color: mostrarCalc ? Color(0xFFFF6A00) : Colors.white, size: 22),
+                  ),
+                ),
+              ]),
+              SizedBox(height: 18),
               Container(
-                padding: EdgeInsets.fromLTRB(24, 56, 24, 28),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [Color(0xFFFF6A00), Color(0xFFFF9A3C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                  borderRadius: BorderRadius.only(bottomLeft: Radius.circular(32), bottomRight: Radius.circular(32)),
-                  boxShadow: [BoxShadow(color: Color(0xFFFF6A00).withOpacity(0.4), blurRadius: 20, offset: Offset(0, 8))],
-                ),
-                child: Column(
-                  children: [
-                    Row(children: [
-                      Container(padding: EdgeInsets.all(10), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(14)), child: Icon(Icons.calculate_rounded, color: Colors.white, size: 28)),
-                      SizedBox(width: 14),
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text("Precifica Fácil", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                        Text("Calcule seu preço ideal", style: TextStyle(color: Colors.white70, fontSize: 13)),
-                      ]),
-                    ]),
-                    SizedBox(height: 20),
-                    Container(
-                      padding: EdgeInsets.all(4),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(14)),
-                      child: Row(children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => setState(() { modoAutomatico = true; calculou = false; }),
-                            child: Container(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(color: modoAutomatico ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(10)),
-                              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                Icon(Icons.bolt_rounded, size: 16, color: modoAutomatico ? Color(0xFFFF6A00) : Colors.white70),
-                                SizedBox(width: 6),
-                                Text("Automático", style: TextStyle(color: modoAutomatico ? Color(0xFFFF6A00) : Colors.white70, fontWeight: FontWeight.w700, fontSize: 13)),
-                              ]),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () => setState(() { modoAutomatico = false; calculou = false; }),
-                            child: Container(
-                              padding: EdgeInsets.symmetric(vertical: 10),
-                              decoration: BoxDecoration(color: !modoAutomatico ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(10)),
-                              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                                Icon(Icons.tune_rounded, size: 16, color: !modoAutomatico ? Color(0xFFFF6A00) : Colors.white70),
-                                SizedBox(width: 6),
-                                Text("Manual", style: TextStyle(color: !modoAutomatico ? Color(0xFFFF6A00) : Colors.white70, fontWeight: FontWeight.w700, fontSize: 13)),
-                              ]),
-                            ),
-                          ),
-                        ),
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(14)),
+                child: Row(children: [
+                  Expanded(child: GestureDetector(
+                    onTap: () => setState(() { modoAutomatico = true; calculou = false; }),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(color: modoAutomatico ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(10)),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.bolt_rounded, size: 15, color: modoAutomatico ? Color(0xFFFF6A00) : Colors.white70),
+                        SizedBox(width: 5),
+                        Text("Automático", style: TextStyle(color: modoAutomatico ? Color(0xFFFF6A00) : Colors.white70, fontWeight: FontWeight.w700, fontSize: 13)),
                       ]),
                     ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.all(20),
-                  children: [
-                    SizedBox(height: 8),
-                    if (modoAutomatico) ...[
-                      Text("CUSTO DO PRODUTO", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
-                      SizedBox(height: 12),
-                      _campo(label: "Custo do Produto", hint: "Ex: 50.00", icone: Icons.inventory_2_rounded, controller: produtoController, cor: Color(0xFFFF6A00)),
-                      SizedBox(height: 8),
-                      Text("VALORES PREDEFINIDOS", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
-                      SizedBox(height: 4),
-                      Text("Toque no lápis para editar", style: TextStyle(color: Colors.white24, fontSize: 11)),
-                      SizedBox(height: 12),
-                      _campoAuto(
-                        label: "Custo da Embalagem", valor: "R\$ ${autoEmbalagem.toStringAsFixed(2)}", editando: editandoEmbalagem,
-                        ctrl: autoEmbalagemCtrl, cor: Color(0xFFFF9A3C), icone: Icons.redeem_rounded,
-                        onEditar: () => setState(() { editandoEmbalagem = true; autoEmbalagemCtrl.text = autoEmbalagem.toString(); }),
-                        onSalvar: () => setState(() { autoEmbalagem = double.tryParse(autoEmbalagemCtrl.text.replaceAll(',', '.')) ?? autoEmbalagem; editandoEmbalagem = false; }),
-                      ),
-                      _campoAuto(
-                        label: "Taxa Fixa", valor: "R\$ ${autoTaxaFixa.toStringAsFixed(2)}", editando: editandoTaxa,
-                        ctrl: autoTaxaCtrl, cor: Color(0xFFFFBF80), icone: Icons.receipt_rounded,
-                        onEditar: () => setState(() { editandoTaxa = true; autoTaxaCtrl.text = autoTaxaFixa.toString(); }),
-                        onSalvar: () => setState(() { autoTaxaFixa = double.tryParse(autoTaxaCtrl.text.replaceAll(',', '.')) ?? autoTaxaFixa; editandoTaxa = false; }),
-                      ),
-                      _campoAuto(
-                        label: "Comissão (%)", valor: "${autoComissao.toStringAsFixed(0)}%", editando: editandoComissao,
-                        ctrl: autoComissaoCtrl, cor: Color(0xFF64B5F6), icone: Icons.percent_rounded,
-                        onEditar: () => setState(() { editandoComissao = true; autoComissaoCtrl.text = autoComissao.toString(); }),
-                        onSalvar: () => setState(() { autoComissao = double.tryParse(autoComissaoCtrl.text.replaceAll(',', '.')) ?? autoComissao; editandoComissao = false; }),
-                      ),
-                      _campoAuto(
-                        label: "Lucro Desejado (%)", valor: "${autoLucro.toStringAsFixed(0)}%", editando: editandoLucro,
-                        ctrl: autoLucroCtrl, cor: Color(0xFF81C784), icone: Icons.trending_up_rounded,
-                        onEditar: () => setState(() { editandoLucro = true; autoLucroCtrl.text = autoLucro.toString(); }),
-                        onSalvar: () => setState(() { autoLucro = double.tryParse(autoLucroCtrl.text.replaceAll(',', '.')) ?? autoLucro; editandoLucro = false; }),
-                      ),
-                    ] else ...[
-                      Text("CUSTOS", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
-                      SizedBox(height: 12),
-                      _campo(label: "Custo do Produto", hint: "Ex: 50.00", icone: Icons.inventory_2_rounded, controller: produtoController, cor: Color(0xFFFF6A00)),
-                      _campo(label: "Custo da Embalagem", hint: "Ex: 2.50", icone: Icons.redeem_rounded, controller: embalagemController, cor: Color(0xFFFF9A3C)),
-                      _campo(label: "Taxa Fixa", hint: "Ex: 5.00", icone: Icons.receipt_rounded, controller: taxaFixaController, cor: Color(0xFFFFBF80)),
-                      SizedBox(height: 8),
-                      Text("MARGENS", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
-                      SizedBox(height: 12),
-                      _campo(label: "Comissão (%)", hint: "Ex: 20", icone: Icons.percent_rounded, controller: comissaoController, cor: Color(0xFF64B5F6)),
-                      _campo(label: "Lucro Desejado (%)", hint: "Ex: 30", icone: Icons.trending_up_rounded, controller: lucroController, cor: Color(0xFF81C784)),
-                    ],
-                    SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: calcular,
-                      child: Container(
-                        width: double.infinity, padding: EdgeInsets.symmetric(vertical: 18),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [Color(0xFFFF6A00), Color(0xFFFF9A3C)], begin: Alignment.centerLeft, end: Alignment.centerRight),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [BoxShadow(color: Color(0xFFFF6A00).withOpacity(0.5), blurRadius: 16, offset: Offset(0, 6))],
-                        ),
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
-                          SizedBox(width: 8),
-                          Text("CALCULAR PREÇO", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
-                        ]),
-                      ),
+                  )),
+                  Expanded(child: GestureDetector(
+                    onTap: () => setState(() { modoAutomatico = false; calculou = false; }),
+                    child: Container(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(color: !modoAutomatico ? Colors.white : Colors.transparent, borderRadius: BorderRadius.circular(10)),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.tune_rounded, size: 15, color: !modoAutomatico ? Color(0xFFFF6A00) : Colors.white70),
+                        SizedBox(width: 5),
+                        Text("Manual", style: TextStyle(color: !modoAutomatico ? Color(0xFFFF6A00) : Colors.white70, fontWeight: FontWeight.w700, fontSize: 13)),
+                      ]),
                     ),
-                    if (calculou) ...[
-                      SizedBox(height: 28),
-                      Text("RESULTADOS", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
-                      SizedBox(height: 12),
-                      _cardResultado(titulo: "PREÇO DE VENDA", subtitulo: "Valor sugerido ao cliente", valor: preco, icone: Icons.sell_rounded, gradiente: [Color(0xFFFF6A00), Color(0xFFFF9A3C)], destaque: true),
-                      _cardResultado(titulo: "SEU LUCRO", subtitulo: "Ganho sobre o produto", valor: lucroReais, icone: Icons.trending_up_rounded, gradiente: [Color(0xFF2E7D32), Color(0xFF66BB6A)]),
-                      _cardResultado(titulo: "VALOR LÍQUIDO", subtitulo: "Após descontar comissão", valor: liquido, icone: Icons.account_balance_wallet_rounded, gradiente: [Color(0xFF1565C0), Color(0xFF42A5F5)]),
-                      _cardResultado(titulo: "COMISSÃO", subtitulo: "Taxa da plataforma", valor: comissaoValor, icone: Icons.percent_rounded, gradiente: [Color(0xFFC62828), Color(0xFFEF5350)]),
-                      _cardResultado(titulo: "CUSTO TOTAL", subtitulo: "Produto + embalagem + taxa", valor: custoTotal, icone: Icons.receipt_long_rounded, gradiente: [Color(0xFF37474F), Color(0xFF78909C)]),
-                      SizedBox(height: 80),
-                    ],
-                  ],
-                ),
+                  )),
+                ]),
               ),
-            ],
+            ]),
           ),
-          if (mostrarCalc)
-            Positioned(bottom: 0, left: 0, right: 0, child: _calculadora()),
-        ],
-      ),
+          Expanded(child: ListView(padding: EdgeInsets.all(20), children: [
+            SizedBox(height: 8),
+            if (modoAutomatico) ...[
+              Row(children: [
+                Icon(Icons.store_rounded, color: Color(0xFFFF6A00), size: 14),
+                SizedBox(width: 6),
+                Text("SHOPEE • CÁLCULO AUTOMÁTICO", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5)),
+              ]),
+              SizedBox(height: 12),
+              _campo(label: "Custo do Produto", hint: "Ex: 50.00", icone: Icons.inventory_2_rounded, controller: produtoController, cor: Color(0xFFFF6A00)),
+              _campoLucro(),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(color: Color(0xFF1A1A2E), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.white24, size: 14),
+                  SizedBox(width: 8),
+                  Text("Comissão e taxa fixa calculadas automaticamente pela tabela Shopee", style: TextStyle(color: Colors.white24, fontSize: 11)),
+                ]),
+              ),
+            ] else ...[
+              Text("CUSTOS", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
+              SizedBox(height: 12),
+              _campo(label: "Custo do Produto", hint: "Ex: 50.00", icone: Icons.inventory_2_rounded, controller: produtoController, cor: Color(0xFFFF6A00)),
+              _campo(label: "Custo da Embalagem", hint: "Ex: 2.50", icone: Icons.redeem_rounded, controller: embalagemController, cor: Color(0xFFFF9A3C)),
+              _campo(label: "Taxa Fixa", hint: "Ex: 5.00", icone: Icons.receipt_rounded, controller: taxaFixaController, cor: Color(0xFFFFBF80)),
+              SizedBox(height: 8),
+              Text("MARGENS", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
+              SizedBox(height: 12),
+              _campo(label: "Comissão (%)", hint: "Ex: 20", icone: Icons.percent_rounded, controller: comissaoController, cor: Color(0xFF64B5F6)),
+              _campo(label: "Lucro Desejado (%)", hint: "Ex: 30", icone: Icons.trending_up_rounded, controller: lucroManualController, cor: Color(0xFF81C784)),
+            ],
+            SizedBox(height: 16),
+            GestureDetector(
+              onTap: calcular,
+              child: Container(
+                width: double.infinity, padding: EdgeInsets.symmetric(vertical: 18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [Color(0xFFFF6A00), Color(0xFFFF9A3C)], begin: Alignment.centerLeft, end: Alignment.centerRight),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [BoxShadow(color: Color(0xFFFF6A00).withOpacity(0.5), blurRadius: 16, offset: Offset(0, 6))],
+                ),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.bolt_rounded, color: Colors.white, size: 22),
+                  SizedBox(width: 8),
+                  Text("CALCULAR PREÇO", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: 1.5)),
+                ]),
+              ),
+            ),
+            if (calculou) ...[
+              SizedBox(height: 28),
+              Text("EM DESTAQUE", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
+              SizedBox(height: 12),
+              _cardDestaque(titulo: "PREÇO DE VENDA", subtitulo: faixaAplicada.isNotEmpty ? "Faixa: $faixaAplicada" : "Valor sugerido ao cliente", valor: preco, icone: Icons.sell_rounded, gradiente: [Color(0xFFFF6A00), Color(0xFFFF9A3C)]),
+              _cardDestaque(titulo: "SEU LUCRO", subtitulo: "Ganho sobre o custo do produto", valor: lucroReais, icone: Icons.trending_up_rounded, gradiente: [Color(0xFF2E7D32), Color(0xFF66BB6A)]),
+              _cardDestaque(titulo: "VALOR A RECEBER", subtitulo: "Líquido após comissão e taxa", valor: liquido, icone: Icons.account_balance_wallet_rounded, gradiente: [Color(0xFF1565C0), Color(0xFF42A5F5)]),
+              SizedBox(height: 20),
+              Text("DETALHES", style: TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 2)),
+              SizedBox(height: 12),
+              _cardPequeno(titulo: "COMISSÃO DE VENDA", valor: comissaoValor, icone: Icons.percent_rounded, cor: Color(0xFFEF5350), extra: "${comissaoPercentual.toStringAsFixed(0)}%"),
+              _cardPequeno(titulo: "TAXA FIXA", valor: taxaFixaAplicada, icone: Icons.receipt_rounded, cor: Color(0xFFFFBF80)),
+              _cardPequeno(titulo: "CUSTO DA EMBALAGEM", valor: modoAutomatico ? 1.0 : (double.tryParse(embalagemController.text) ?? 0), icone: Icons.redeem_rounded, cor: Color(0xFFFF9A3C)),
+              _cardPequeno(titulo: "CUSTO TOTAL", valor: custoTotal, icone: Icons.receipt_long_rounded, cor: Color(0xFF78909C)),
+              SizedBox(height: 80),
+            ],
+          ])),
+        ]),
+        if (mostrarCalc)
+          Positioned(bottom: 0, left: 0, right: 0, child: _calculadora()),
+      ]),
     );
   }
 }

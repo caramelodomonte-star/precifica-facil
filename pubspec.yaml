@@ -1,21 +1,12 @@
-name: precifica_facil
-description: Um app simples para precificação de produtos.
-publish_to: 'none'
-version: 1.0.0+1
+name: precificador
+description: app
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.0.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-
-flutter:
-  uses-material-design: true
-
-  dependencies:
   window_manager: ^0.3.0
+  math_expressions: ^2.4.0
+
